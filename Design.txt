@@ -1,0 +1,118 @@
+//Design of RISC processor 
+module risc_processor (
+    input clk,
+    input reset
+);
+
+// Program Counter
+reg [31:0] pc;
+
+// Instruction Memory
+reg [31:0] instr_mem [0:255];
+
+// Data Memory
+reg [31:0] data_mem [0:255];
+
+// Register File
+reg [31:0] regfile [0:31];
+
+// Pipeline Registers
+reg [31:0] IF_ID_instr, IF_ID_pc;
+reg [31:0] ID_EX_pc, ID_EX_rd1, ID_EX_rd2, ID_EX_imm;
+reg [4:0]  ID_EX_rs1, ID_EX_rs2, ID_EX_rd;
+reg [3:0]  ID_EX_opcode;
+reg        ID_EX_mem_read, ID_EX_mem_write, ID_EX_reg_write;
+
+reg [31:0] EX_MEM_alu_out, EX_MEM_rd2;
+reg [4:0]  EX_MEM_rd;
+reg        EX_MEM_mem_read, EX_MEM_mem_write, EX_MEM_reg_write;
+
+reg [31:0] MEM_WB_data;
+reg [4:0]  MEM_WB_rd;
+reg        MEM_WB_reg_write;
+
+// Instruction fields
+wire [4:0] rs1 = IF_ID_instr[25:21];
+wire [4:0] rs2 = IF_ID_instr[20:16];
+wire [4:0] rd  = IF_ID_instr[15:11];
+wire [15:0] imm = IF_ID_instr[15:0];
+wire [3:0] opcode = IF_ID_instr[31:28];
+
+// Sign Extend
+wire [31:0] imm_ext = {{16{imm[15]}}, imm};
+
+// ALU Result
+reg [31:0] alu_result;
+
+integer i;
+
+// Initialization
+initial begin
+    pc = 0;
+    for(i = 0; i < 32; i = i + 1) begin
+      regfile[i] = 0;
+    end
+  regfile[3] = 10;
+  regfile[4] = 3;
+    // Sample instruction initialization
+    instr_mem[0] = {4'b0001, 5'd1, 5'd2, 5'd3, 13'd0}; // ADD
+    instr_mem[1] = {4'b0010, 5'd3, 5'd2, 5'd4, 13'd0}; // SUB
+end
+
+// Main pipeline
+always @(posedge clk or posedge reset) begin
+    if(reset) begin
+        pc <= 0;
+    end else begin
+        // ==== Instruction Fetch ====
+        IF_ID_instr <= instr_mem[pc>>2];
+        IF_ID_pc    <= pc;
+        pc          <= pc + 4;
+
+        // ==== Instruction Decode ====
+        ID_EX_pc        <= IF_ID_pc;
+        ID_EX_rd1       <= regfile[rs1];
+        ID_EX_rd2       <= regfile[rs2];
+        ID_EX_imm       <= imm_ext;
+        ID_EX_rs1       <= rs1;
+        ID_EX_rs2       <= rs2;
+        ID_EX_rd        <= rd;
+        ID_EX_opcode    <= opcode;
+        ID_EX_mem_read  <= (opcode == 4'b0100); // LOAD
+        ID_EX_mem_write <= (opcode == 4'b0101); // STORE
+        ID_EX_reg_write <= (opcode == 4'b0001 || opcode == 4'b0010 || opcode == 4'b0100); // ADD, SUB, LOAD
+
+        // ==== Execute Stage ====
+        case(ID_EX_opcode)
+            4'b0001: alu_result = ID_EX_rd1 + ID_EX_rd2; // ADD
+            4'b0010: alu_result = ID_EX_rd1 - ID_EX_rd2; // SUB
+            4'b0100: alu_result = ID_EX_rd1 + ID_EX_imm; // LOAD addr
+            4'b0101: alu_result = ID_EX_rd1 + ID_EX_imm; // STORE addr
+            default: alu_result = 32'd0;
+        endcase
+
+        EX_MEM_alu_out    <= alu_result;
+        EX_MEM_rd2        <= ID_EX_rd2;
+        EX_MEM_rd         <= ID_EX_rd;
+        EX_MEM_mem_read   <= ID_EX_mem_read;
+        EX_MEM_mem_write  <= ID_EX_mem_write;
+        EX_MEM_reg_write  <= ID_EX_reg_write;
+
+        // ==== Memory Stage ====
+        if (EX_MEM_mem_read)
+            MEM_WB_data <= data_mem[EX_MEM_alu_out >> 2];
+        else if (EX_MEM_mem_write)
+            data_mem[EX_MEM_alu_out >> 2] <= EX_MEM_rd2;
+        else
+            MEM_WB_data <= EX_MEM_alu_out;
+
+        MEM_WB_rd        <= EX_MEM_rd;
+        MEM_WB_reg_write <= EX_MEM_reg_write;
+
+        // ==== Write Back ====
+        if (MEM_WB_reg_write)
+            regfile[MEM_WB_rd] <= MEM_WB_data;
+    end
+end
+
+endmodule

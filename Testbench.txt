@@ -1,0 +1,27 @@
+// Code for testbench
+module testbench;
+    reg clk;
+    reg reset;
+
+    // Instantiate the RISC processor
+    risc_processor uut (
+        .clk   (clk),
+        .reset (reset)
+    );
+
+    // Clock generation
+    initial clk = 0;
+    always #5 clk = ~clk; // 10 time units period
+
+    // Reset and simulation control
+    initial begin
+        reset = 1;
+        #12;
+        reset = 0;
+        // Run simulation for a few cycles
+        #100;
+        $display("regfile[3] (result ADD): %d", uut.regfile[3]);
+        $display("regfile[4] (result SUB): %d", uut.regfile[4]);
+        $finish;
+    end
+endmodule
